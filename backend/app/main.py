@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app import storage
 from app.config import get_settings
 from app.queue import close_queue
-from app.routers import assets, auth, events, health, runs
+from app.routers import assets, auth, events, health, runs, sessions
 
 settings = get_settings()  # 模块加载时取一次配置，供下方判断是否托管前端等使用
 
@@ -42,6 +42,7 @@ api.include_router(health.router)  # 健康检查（连通性自检）
 api.include_router(auth.router)  # 账号注册/登录/当前用户
 api.include_router(assets.router)  # 素材上传与管理
 api.include_router(runs.router)  # 任务（生成等）状态查询
+api.include_router(sessions.router)  # 编辑会话与画布图层
 app.include_router(api)  # 把聚合后的 /api 路由挂到应用
 
 # SSE 不挂在 /api 下，便于反向代理单独关闭缓冲

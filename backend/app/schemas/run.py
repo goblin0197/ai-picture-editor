@@ -52,6 +52,7 @@ class RunOut(BaseModel):
     progress: int  # 进度 0-100
     stage: str  # 当前阶段文案
     error: str | None  # 失败原因，成功/进行中为 None
+    prompt: str | None = None  # 发起任务时的提示词（编辑会话用它回显素材名，可能为 None）
     candidates: list[AssetOut] = []  # 候选图列表，默认空
 
     # @classmethod：工厂方法，从 ToolRun 与候选图列表构造出参
@@ -64,5 +65,7 @@ class RunOut(BaseModel):
             progress=run.progress,
             stage=run.stage,
             error=run.error,
+            # params 是 JSONB：提示词存在发起时的入参里，这里回填给前端展示
+            prompt=run.params.get("prompt"),
             candidates=candidates or [],  # 未传候选图时用空列表兜底
         )

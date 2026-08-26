@@ -9,6 +9,8 @@ import { errorMessage } from '@/hooks/useAuth'
 import { useAssets, useUploadAsset } from '@/hooks/useAssets'
 // useGenerate：提交文生图任务。
 import { useGenerate } from '@/hooks/useRun'
+// 编辑会话：把历史素材一键建成会话并跳进编辑器。
+import { useCreateSession } from '@/hooks/useSessions'
 // 提示词草稿的读写：暂存在 sessionStorage，避免误刷新丢失输入。
 import { readPromptDraft, savePromptDraft } from '@/lib/promptDraft'
 
@@ -19,6 +21,13 @@ export default function CreatePage() {
   const { data: assets = [], isPending } = useAssets()
   const upload = useUploadAsset()
   const generate = useGenerate()
+  const createSession = useCreateSession()
+
+  const openEditor = (assetId: string) =>
+    createSession.mutate(
+      { current_asset_id: assetId },
+      { onSuccess: (session) => navigate(`/editor/${session.id}`) },
+    )
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
@@ -47,7 +56,10 @@ export default function CreatePage() {
       {/* 上传区：把选中的文件交给 upload mutation；上传中禁用拖放区 */}
       <section className="mt-10">
         <h2 className="text-muted mb-3 text-sm font-medium">上传已有图片</h2>
-        <ImageDropzone onFile={(file) => upload.mutate(file)} disabled={upload.isPending} />
+        <ImageDropzone
+          onFile={(file) => upload.mutate(file, { onSuccess: (asset) => openEditor(asset.id) })}
+          disabled={upload.isPending || createSession.isPending}
+        />
         {upload.isError && (
           <p className="text-danger mt-2 text-sm">{errorMessage(upload.error)}</p>
         )}
@@ -65,7 +77,7 @@ export default function CreatePage() {
           // 响应式网格：随宽度从 2 列增到 4 列
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {assets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} />
+              <AssetCard key={asset.id} asset={asset} onSelect={() => openEditor(asset.id)} />
             ))}
           </div>
         )}

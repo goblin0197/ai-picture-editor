@@ -9,6 +9,7 @@ import WorkbenchLayout from '@/layouts/WorkbenchLayout'
 import AuthPage from '@/pages/AuthPage'
 import CandidatesPage from '@/pages/CandidatesPage'
 import CreatePage from '@/pages/CreatePage'
+import EditorPage from '@/pages/EditorPage'
 import LandingPage from '@/pages/LandingPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 
@@ -28,8 +29,9 @@ export default function App() {
           {/* 再套一层工作台外壳：带侧边导航，内部用 <Outlet /> 渲染下面这些子页面 */}
           <Route element={<WorkbenchLayout />}>
             <Route path="/create" element={<CreatePage />} />
-            {/* /editor 与 /batch 尚未实现，用占位页顶着（对应 AGENTS.md 的 S4、S11 等计划步骤） */}
-            <Route path="/editor" element={<PlaceholderPage title="编辑" hint="功能开发中" />} />
+            {/* 编辑器：无 sessionId 时进入会话列表，带 sessionId 时直接打开该会话（S4 起步实现） */}
+            <Route path="/editor" element={<EditorPage />} />
+            <Route path="/editor/:sessionId" element={<EditorPage />} />
             <Route path="/batch" element={<PlaceholderPage title="批量" hint="功能开发中" />} />
             {/* 生成任务的结果页：提交后跳到 /candidates/:runId 看进度与候选图（:runId 是路径参数） */}
             <Route path="/candidates/:runId" element={<CandidatesPage />} />

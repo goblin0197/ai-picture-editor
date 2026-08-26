@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Asset } from '@/api/assets'
 // useRun 合并 SSE 实时进度与快照接口，暴露状态/进度/候选图等。
 import { useRun } from '@/hooks/useRun'
+import { useCreateSession } from '@/hooks/useSessions'
 
 // 候选图结果页：展示生成进度，成功后列出候选图供用户选一张进入编辑。
 // 刷新页面也能恢复——useRun 会用快照接口重新拉取当前状态。
@@ -14,7 +15,20 @@ export default function CandidatesPage() {
   // picked：当前选中的候选图 id（未选为 null）。
   const [picked, setPicked] = useState<string | null>(null)
   // 订阅该任务：runId 为空串时传 null，useRun 内部据此不建立连接。
-  const { status, progress, stage, error, candidates, notFound } = useRun(runId || null)
+  const { status, progress, stage, error, prompt, candidates, notFound } = useRun(runId || null)
+  const createSession = useCreateSession()
+
+  // 采用一张进入编辑，同批其余候选一并带进会话图片墙
+  const adopt = () =>
+    picked &&
+    createSession.mutate(
+      {
+        current_asset_id: picked,
+        asset_ids: candidates.map((asset) => asset.id),
+        title: prompt ?? undefined,
+      },
+      { onSuccess: (session) => navigate(`/editor/${session.id}`) },
+    )
 
   // 分支一：任务不存在（快照接口 404），链接可能已失效。
   if (notFound) {
@@ -46,16 +60,18 @@ export default function CandidatesPage() {
       <header className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-ink text-2xl font-semibold tracking-tight">选出一张</h1>
-          <p className="text-muted mt-1 text-sm">挑一张满意的进入编辑，其余候选图会保留在素材库。</p>
+          <p className="text-muted mt-1 text-sm">
+            挑一张满意的进入编辑，其余候选图会留在会话图片墙随时切回。
+          </p>
         </div>
         {/* 未选中时禁用；选定后带 asset 参数跳到编辑页（编辑功能待实现） */}
         <button
           type="button"
-          disabled={!picked}
-          onClick={() => navigate(`/editor?asset=${picked}`)}
+          disabled={!picked || createSession.isPending}
+          onClick={adopt}
           className="bg-ink hover:bg-dark rounded-control shrink-0 px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
-          进入编辑
+          {createSession.isPending ? '打开中…' : '进入编辑'}
         </button>
       </header>
 
