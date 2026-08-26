@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import SessionDep
 from app.deps import CurrentUser
 from app.models.tool_run import ToolRun
-from app.queue import enqueue
 from app.schemas.asset import AssetOut
 from app.schemas.run import GenerateIn, RunOut
 from app.services import assets as asset_service
-from app.services import generation, runs
+from app.services import runs, tools
 from app.services.runs import RunNotFound
+from app.tools import GENERATE_IMAGE
 
 # 本模块不设业务前缀（tags 仅用于文档分组），具体路径写在各装饰器上；
 # 经 main.py 套 /api 后对外为 /api/generations 与 /api/runs/{id}。
@@ -45,13 +45,9 @@ async def create_generation(payload: GenerateIn, user: CurrentUser, session: Ses
         if await asset_service.get_for_user(session, user.id, asset_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "参考图不存在")
 
-    # 把入参序列化成可 JSON 存储的 dict，落进 ToolRun.params 供 worker 读取。
-    params = payload.model_dump(mode="json")
-    # 第一步：建任务记录，初始状态 queued。
-    run = await runs.create(session, user.id, generation.TOOL, params)
-    # 第二步：投递队列，以 run.id 作为 job id 保证幂等（重复投递不会二次执行）。
-    # 真正的生成在 worker 侧 generate_images 任务里跑，只起后端会一直停在 queued。
-    await enqueue("generate_images", run.id)
+    run = await tools.submit(session, user.id, GENERATE_IMAGE.name, payload.model_dump(mode="json"))
+    # 三步（校验参数→建记录→投递）已收进 tools.submit：c200587 起界面与 Agent 共用这条入口，
+    # job id 仍是 run.id（幂等不变），worker 侧由通用 run_tool 任务按工具分发执行。
     return RunOut.of(run)
 
 

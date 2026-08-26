@@ -1,4 +1,4 @@
-"""编辑会话路由：/api/sessions 的增删查改与历史查询。
+"""编辑会话路由：/api/sessions 的增删查改、历史查询与对话指令。
 
 所有接口都需要登录（CurrentUser），跨用户访问一律 404（见 _load）。
 """
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # 异步会话类型
 from app.db import SessionDep  # 统一的数据库会话依赖
 from app.deps import CurrentUser  # 从会话 Cookie 解出的登录用户
 from app.models import Asset, EditSession, User  # 相关 ORM 模型
+from app.schemas.agent import MessageIn, TurnOut  # 对话指令的出入参
 from app.schemas.asset import AssetOut  # 素材出参
 from app.schemas.session import (
     HistoryOut,
@@ -20,6 +21,7 @@ from app.schemas.session import (
     SessionOut,
     SessionPatchIn,
 )
+from app.services import agent as agent_service  # 对话轮次的规划与落库
 from app.services import assets as asset_service  # 素材查询（主键 + user_id 联合条件）
 from app.services import sessions  # 会话业务逻辑
 from app.services.sessions import SessionNotFound  # 会话不存在异常
@@ -109,3 +111,21 @@ async def get_history(
     record = await _load(session, user, session_id)
     entries = await sessions.history_of(session, record)
     return [HistoryOut.of(entry) for entry in entries]
+
+
+@router.get("/{session_id}/messages")
+async def list_messages(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> list[TurnOut]:
+    """会话的对话记录（按时间正序），侧栏打开会话时恢复整段对话。"""
+    record = await _load(session, user, session_id)
+    return [TurnOut.of(turn) for turn in await agent_service.turns_of(session, record)]
+
+
+@router.post("/{session_id}/messages", status_code=status.HTTP_201_CREATED)
+async def send_message(
+    session_id: uuid.UUID, payload: MessageIn, user: CurrentUser, session: SessionDep
+) -> TurnOut:
+    """发送一条修图指令：同步规划并返回本轮结果（计划中的工具再经队列异步执行）。"""
+    record = await _load(session, user, session_id)
+    return TurnOut.of(await agent_service.respond(session, record, payload.text))

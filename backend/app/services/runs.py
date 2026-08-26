@@ -29,8 +29,17 @@ def snapshot(run: ToolRun) -> dict:
 
 # 建任务记录（状态默认 queued），refresh 拿回数据库生成的字段（id、时间戳等）。
 # 「建记录→投递→消费」三步里的第一步。入参：user_id/tool/params；出参：落库后的 ToolRun。
-async def create(session: AsyncSession, user_id: uuid.UUID, tool: str, params: dict) -> ToolRun:
-    run = ToolRun(user_id=user_id, tool=tool, params=params, stage="等待开始")
+# session_id 可空：会话内发起的工具传会话 id（产出自动进图片墙），创作页发起则不传。
+async def create(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    tool: str,
+    params: dict,
+    session_id: uuid.UUID | None = None,
+) -> ToolRun:
+    run = ToolRun(
+        user_id=user_id, session_id=session_id, tool=tool, params=params, stage="等待开始"
+    )
     session.add(run)
     await session.commit()
     await session.refresh(run)
