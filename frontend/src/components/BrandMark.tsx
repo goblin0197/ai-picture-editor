@@ -36,6 +36,7 @@ export default function BrandMark({
             strokeWidth="2"
             strokeLinecap="round"
           />
+          <circle cx="15.5" cy="3.5" r="1.55" fill="currentColor" />
         </svg>
       </span>
       {/* 可选文字：由调用方通过 children 传入（如「AI 修图智能体」） */}
