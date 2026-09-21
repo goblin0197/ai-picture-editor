@@ -14,12 +14,15 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_port: int = 7302
 
-    database_url: str = "postgresql+asyncpg://retouch:retouch_dev@localhost:7311/retouch"
-    redis_url: str = "redis://localhost:7312"
+    # 本机共享 PostgreSQL 实例，用其惯例默认管理员；5433 是因为默认的 5432 已被其他项目占用
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/retouch"
+    # 本机共享 Redis 实例；db 0/1 已被其他项目占用，本项目固定用 db 2
+    redis_url: str = "redis://localhost:6379/2"
 
-    s3_endpoint: str = "http://localhost:7313"
-    s3_access_key: str = "retouch"
-    s3_secret_key: str = "retouch_dev"
+    # 本机共享 MinIO 实例，使用其默认端口与默认根账号
+    s3_endpoint: str = "http://localhost:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
     s3_bucket: str = "retouch"
     # 签名 URL 有效期，秒
     s3_url_ttl: int = 900

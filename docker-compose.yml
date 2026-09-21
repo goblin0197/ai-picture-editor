@@ -1,85 +1,39 @@
 name: ai-retouch-agent
 
+# 基础设施不在此文件内定义：PostgreSQL / Redis / MinIO 已改成本机独立共享服务，
+# 供本机与家庭内网多个项目复用（host 网络，监听 0.0.0.0）：
+#
+#   ~/Desktop/postgres  → localhost:5433（5432 已被其他项目占用）
+#   ~/Desktop/redis     → localhost:6379（本项目占用 db 2，db 0/1 已被其他项目占用）
+#   ~/Desktop/minio     → localhost:9000（控制台 9001）
+#
+# 启停基础设施用各自目录下的 compose，例如：
+#   docker compose -f ~/Desktop/postgres/docker-compose.yml up -d
+#
+# 本文件只保留部署用的 app 与 worker：docker compose --profile deploy up -d
+
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    ports:
-      - "7311:5432"
-    environment:
-      POSTGRES_USER: retouch
-      POSTGRES_PASSWORD: retouch_dev
-      POSTGRES_DB: retouch
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U retouch -d retouch"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "7312:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    ports:
-      - "7313:9000"
-      - "7314:9001"
-    environment:
-      MINIO_ROOT_USER: retouch
-      MINIO_ROOT_PASSWORD: retouch_dev
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # 以下两个仅在部署时启用：docker compose --profile deploy up -d
   app:
     profiles: ["deploy"]
     build: .
     restart: unless-stopped
+    # host 网络：与共享基础设施保持一致，且无需再做端口映射
+    # （uvicorn 直接绑定宿主机 7302，.env 里的 localhost 连接串也照常可用）
+    network_mode: host
     command: uvicorn app.main:app --host 0.0.0.0 --port 7302
-    ports:
-      - "7302:7302"
     env_file: .env
     volumes:
       - cv_models:/root/.u2net
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      minio: { condition: service_healthy }
 
   worker:
     profiles: ["deploy"]
     build: .
     restart: unless-stopped
+    network_mode: host
     command: arq app.worker.WorkerSettings
     env_file: .env
     volumes:
       - cv_models:/root/.u2net
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      minio: { condition: service_healthy }
 
 volumes:
-  pg_data:
-  redis_data:
-  minio_data:
   cv_models:
