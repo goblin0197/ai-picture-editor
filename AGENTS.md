@@ -6,7 +6,7 @@
 
 AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成商品图，或上传图片后继续编辑，自动串联抠图、换背景、局部修改与多尺寸导出。
 
-当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**已就绪；生成、编辑、批量、导出尚未实现，`/editor`、`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S4、S11 等）。
+当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**、**落地页与视觉规范**已就绪；生成、编辑、批量、导出尚未实现，`/editor`、`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S4、S11 等）。
 
 ## 目录结构
 
@@ -27,8 +27,11 @@ AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成�
 | `backend/tests/` | pytest 测试（`asyncio_mode = "auto"`，直接用顶层 `async def`） |
 | `frontend/src/api/` | `client.ts` 是通用请求出口；`auth.ts`/`assets.ts` 是分领域封装 |
 | `frontend/src/hooks/` | React Query 封装（`useAuth`、`useAssets`），含查询键与失效策略 |
-| `frontend/src/components/` | 可复用组件（`AssetCard`、`ImageDropzone`） |
-| `frontend/src/index.css` | Tailwind v4 `@theme` 设计令牌（**无 tailwind.config.js**） |
+| `frontend/src/components/` | 可复用组件（`BrandMark`、`AssetCard`、`ImageDropzone`） |
+| `frontend/src/components/landing/` | 落地页分区组件，`previews.tsx` 用纯样式拼界面示意图（无图片资源） |
+| `frontend/src/layouts/` | `RequireAuth`（登录守卫）、`WorkbenchLayout`（工作台外壳） |
+| `frontend/src/lib/` | 无 UI 依赖的工具（`format`、`promptDraft` 草稿读写） |
+| `frontend/src/index.css` | Tailwind v4 `@theme` 设计令牌 + `@utility` 自定义工具类（**无 tailwind.config.js**） |
 | `docs/` | 方案与过程文档，**已被 `.gitignore` 忽略**，克隆后不存在 |
 
 ## 端口分配
@@ -119,11 +122,16 @@ npm run lint     # oxlint
 
 - `tsconfig.app.json` 开启了 `verbatimModuleSyntax`（类型导入必须写 `import type`）、`noUnusedLocals`、`noUnusedParameters`、`erasableSyntaxOnly`，构建即类型检查。
 - 路径别名 `@` → `frontend/src` 在 `vite.config.ts` 与 `tsconfig.app.json` **两处各配一份**，改动时必须同步。
-- 样式使用 `src/index.css` `@theme` 中的语义令牌（颜色如 `text-ink`、`bg-paper`、`border-line`、`bg-brand-soft`、`text-muted`，圆角如 `rounded-control`/`rounded-card`，阴影如 `shadow-card`），不要引入新的原始色值或另建配置文件。现有组件多用等价的行内写法（如 `rounded-[12px]`、`text-[10px]` 之外的颜色一律走令牌）。
+- 样式一律走语义令牌，不要写字面值。颜色用 `text-ink`/`bg-paper`/`border-line`/`bg-brand-soft`/`text-muted`/`text-faint`/`text-danger` 等，圆角用 `rounded-card`(18px)/`rounded-control`(12px)/`rounded-panel`(26px)，阴影用 `shadow-card`/`shadow-control`/`shadow-lift`/`shadow-panel`。字号等无令牌的可用行内写法（如 `text-[15px]`）。**已知遗留**：`WorkbenchLayout`、`AssetCard`、`ImageDropzone` 里还有 `rounded-[12px]`/`rounded-[18px]` 字面值，它们与 `rounded-control`/`rounded-card` 等价，改到时顺手替换即可。
+- 自定义工具类定义在 `index.css` 的 `@utility` 中（`bg-glow` 顶部光晕、`bg-grid` 网格底纹），不要为一次性样式另建 CSS 文件。
+- 动效统一用 `animate-rise` 入场（配 `style={{ animationDelay }}` 做错峰），并依赖 `index.css` 中已有的 `prefers-reduced-motion` 全局降级——新增动画无需自己处理该媒体查询。
 - 服务端状态用 `@tanstack/react-query`，请求统一走 `@/api/client` 的 `api`；错误已归一化为 `ApiError`（携带 `status` 与后端 `detail`）。**例外**：文件上传见 `api/assets.ts`，因需要 `FormData` 而直接用 `fetch`（不要给它设 `Content-Type`，让浏览器带 boundary），但仍需按同样方式抛 `ApiError`。
 - 每个领域一个 API 模块（`api/auth.ts`、`api/assets.ts`），组件不直接写请求；配套的查询键与缓存失效放在 `hooks/` 下（如 `useUploadAsset` 成功后失效 `['assets']`）。
+- 页面组件只做组装：`LandingPage` 仅组合 `components/landing/*`，状态与交互下沉到分区组件（如 `LandingHero` 自己持有输入状态）。新增落地页区块放 `components/landing/`。
+- 品牌标识统一用 `components/BrandMark.tsx`（`size="sm" | "md"`，可选 `children` 放文字），落地页、登录页、工作台三处共用，不要再手写 logo。
+- `sessionStorage`/`localStorage` 访问一律用 `try/catch` 包裹（见 `lib/promptDraft.ts`）——隐私模式下会直接抛异常，不能让草稿读写中断主流程。
 - 画布/图层类交互使用 `konva` + `react-konva`；路由使用 `react-router-dom`，新页面需在 `src/App.tsx` 注册。
-- 无障碍：图标等装饰性元素标注 `aria-hidden`。
+- 无障碍：图标等装饰性元素标注 `aria-hidden`；纯装饰性的界面示意图整个容器加 `aria-hidden`（见 `previews.tsx`）。
 
 ## 测试与验证
 
