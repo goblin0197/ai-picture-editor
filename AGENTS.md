@@ -21,7 +21,7 @@ AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成�
 | `backend/app/events.py` | Redis 发布订阅，向 SSE 推送任务进度 |
 | `backend/app/queue.py` | ARQ 投递入口，`enqueue` 以 run id 作为 job id 保证幂等 |
 | `backend/app/ratios.py` | 输出比例枚举与像素尺寸（与交付尺寸对齐） |
-| `backend/app/providers/` | 图像模型适配层：`base.py` 定义 Protocol，`mock`/`dashscope` 各一份实现 |
+| `backend/app/providers/` | 图像模型适配层：`base.py` 定义 Protocol，`mock`/`dashscope` 各一份实现，另有本地新增的 `openai_images.py` |
 | `backend/app/routers/` | 路由模块，每个模块自带 `prefix` 与 `tags`；`events.py` 是 SSE，单独挂载 |
 | `backend/app/services/` | 业务逻辑（`auth` 账号、`assets` 素材、`images` 图片校验、`runs` 任务状态、`generation` 生成编排） |
 | `backend/app/schemas/` | Pydantic 出参模型，`XxxOut.of(orm_obj)` 从 ORM 对象构造 |
@@ -130,6 +130,14 @@ npm run lint     # oxlint
 
 **图像提供方默认 `mock`**，用提示词哈希决定构图生成占位图（同一提示词结果稳定）、不产生调用费用；切到 `dashscope` 才走真实模型（`qwen-image-3.0-pro` / `qwen-image-edit-max` / `qwen-plus`，走异步提交+轮询，参考图以 base64 内联）。**开发与测试不要擅自改动该开关或消耗真实额度**——现有测试全部跑在 mock 上。
 
+**本仓库有一处上游没有的本地扩展：`openai` 提供方**（`app/providers/openai_images.py`）。它是为了对接本机的 OpenAI 兼容网关（`DASHSCOPE_BASE_URL` 指向 `192.168.1.100:8081/v1`）而新增的，对应 `IMAGE_PROVIDER=openai`。三点与上游不同，改动上游文件时注意保留：`providers/__init__.py` 里多一个 `if name == "openai"` 分支；该提供方复用 `dashscope_*` 配置而非新增一组；它不支持参考图（`references` 非空时直接抛 `ProviderError`）。协议差异：走 `/v1/images/generations` 一次 POST 同步返回（不像 dashscope 要轮询任务），尺寸是 `WIDTHxHEIGHT`（用 `x`），响应给 `data[].url` 或 `data[].b64_json`（两种都处理）。
+
+**该网关有三个实测得出的脾气**，改这个适配器前务必知道：① **对模型有分类**——`agnes-image-*` 与 `grok-4.7` 不属于图片模型、报 `images endpoint requires an image model`，实测可用的是 `gpt-image-2`；② **忽略 `n` 参数**，无论给几都只回 1 张，所以适配器首轮按 count 请求、不足时并行补足（串行会把耗时乘上张数，`count=2` 实测约 90 秒）；③ 会把请求尺寸吸附到 16 的倍数（请求 1080×1080 实际返回 1088×1088），落库的是**实际解码尺寸**，与 `ratios.py` 声明的交付尺寸不严格相等。
+
+**关于 agnes 模型（2026-09-26 更新，已可用）**：原先 `agnes-image-*` 被网关拦在图片端点外，报 `images endpoint requires an image model`。根因是 sub2api 网关（`~/Desktop/sub2api`）的白名单里只有 `gpt-image-` 与 `grok-imagine-image` 两个前缀——**上游本身是支持 agnes 走图片端点的**（直连上游测试：`/v1/chat/completions` 返回「Model ... is an image model. Use /v1/images/generations」，而 `/v1/images/generations` 用 agnes 能正常出图）。用户已在 sub2api 侧新增 `isAgnesCompatibleImageModel`（`backend/internal/service/openai_images.go`，接入 `validateCompatibleImagesModel`）并重建容器，现在 agnes 可用。**这是 sub2api 的改动，不在本仓库**。
+
+**agnes 与 gpt-image-2 的行为差异**（适配器已同时兼容两者）：agnes **拒绝 `n>1`**（直接报 `n must be 1`，不是像 gpt-image-2 那样静默只回 1 张），所以 `_collect` 先试 count、被拒就退回单张模式；agnes 更快（单张约 10 秒、4 张约 26 秒，而 gpt-image-2 单张约 36 秒、4 张约 111 秒）；agnes 返回 1024×1024（不带 16 倍数吸附）。上游对 agnes 的 size 接受 `1K/2K/3K/4K` 或 `WIDTHxHEIGHT`。
+
 ## 编码规范
 
 后端：
@@ -158,7 +166,14 @@ npm run lint     # oxlint
 ## 测试与验证
 
 - 后端测试通过 `httpx.ASGITransport` 直接驱动 `app`，**不启动真实服务器**；但 `test_health.py` 会断言数据库与对象存储连通性，`test_assets.py` 与 `conftest.py` 的 `bucket` fixture 会真实读写 MinIO，`test_generation.py` 会真的调 worker 任务函数并在 SSE 上收帧——跑测试前需确保共享 PostgreSQL、MinIO、Redis 都已启动（`docker compose -f ~/Desktop/postgres/docker-compose.yml up -d` 等），否则失败。
-- **测试直连真实数据库与对象存储，没有隔离或 mock**：`conftest.py` 提供 `cleanup_users` 自动 fixture（每个用例结束后 `delete(User)`，靠级联清掉 assets 与 tool_runs），`credentials` fixture 生成随机用户名避免撞车。新增写库测试请沿用这些 fixture，不要自建清理逻辑；注意 MinIO 里的对象**不会**被数据库级联清掉，写对象存储的测试要自行考虑残留（现有上传与生成测试会留下对象，属已知现象）。
+- **测试连的是真实服务的独立库与独立桶，不使用 mock 数据库**（见下方三条隔离设置）：`cleanup_users` 自动 fixture 在每个用例结束后 `delete(User)`，靠级联清掉 assets 与 tool_runs；`credentials` fixture 生成随机用户名避免撞车。新增写库测试请沿用这些 fixture，不要自建清理逻辑。
+- **`conftest.py` 顶部强制三条隔离设置**（环境变量优先级高于 `.env`，必须在 `app` 导入前设置）：
+  1. `IMAGE_PROVIDER=mock` —— 否则 `.env` 切到真实模型后，测试会真的调用外部服务（实测耗时 9 秒 → 134 秒、消耗真额度），且断言 mock 特有尺寸/数量的用例会失败。
+  2. `DATABASE_URL` → **独立测试库 `retouch_test`** —— `cleanup_users` 执行的是无 WHERE 条件的 `delete(User)`（上游遗留写法），跑在开发库上会把真实账号连级联数据一起删光。可用 `TEST_DATABASE_URL` 环境变量覆盖库地址。
+  3. `S3_BUCKET=retouch-test` —— MinIO 对象不受数据库级联删除影响，用独立桶避免测试残留污染开发桶。
+
+  **这三点不要删**。测试库结构用 `DATABASE_URL=...retouch_test uv run alembic upgrade head` 初始化（或在测试库空时先跑一次迁移）。
+- **`cleanup_users` 删的是整张表，会连真实账号一起清掉**：`delete(User)` 没有 WHERE 条件。上游在很后面的提交里才把它改成只删测试账号。**隔离靠上面的独立测试库**，不要再依赖「跑测试前先确认没重要数据」这种人肉措施；跑完测试若发现开发桶有多余对象（各以 `users/<空闲 UUID>/` 为前缀），需手工清理。
 - **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `generate_images` 同步执行。跑完一轮测试 Redis 里会留下若干 `arq:result:*` 键（TTL 约 1 小时自清）；此时启动 worker 会把它们再捡一遍，但 `is_terminal` 守卫让它们瞬间返回——这是预期行为，不是异常。
 - `pytest` 的 `asyncio_default_fixture_loop_scope` 与 `asyncio_default_test_loop_scope` 均为 `session`：数据库引擎在模块级创建，所有测试必须共享同一事件循环，否则连接跨循环复用会失败。**不要**改成 function 级。
 - 前端暂无测试框架。改动前端后至少执行 `npm run build`（等价于类型检查）与 `npm run lint`。
@@ -169,7 +184,7 @@ npm run lint     # oxlint
 - **当前 `uv run ruff check .` 会报 2 个 E501 行超长错误**，都在 `backend/tests/test_generation.py` 那两行硬编码的 `test_intruder` 注册上（第 95、122 行）。这是上游遗留问题，它在很后面的提交里才换成 `other_credentials` fixture 一并修掉。**本地不要擅自修**，否则与上游产生差异、影响对照学习。
 - **改了数据库结构后要重启后端**：asyncpg 会缓存预编译语句计划，运行期间执行 `ALTER TABLE`（如 `timestamptz` 迁移）会让缓存计划失效，报 `InvalidCachedStatementError`。SQLAlchemy 的 asyncpg 方言会自动清缓存、下一次请求即恢复；但更稳妥的做法是「先停服务 → 跑迁移 → 再启动」。
 - **MinIO 的桶由 `storage.ensure_bucket` 在应用启动时自动创建**（`main.py` 的 `lifespan`，`/api/health` 也会调用它）。若手工删掉了桶，重启后端或请求一次健康检查即可恢复，不必手动 `mc mb`。MinIO 侧的约定见 `~/Desktop/minio/README.md`。
-- **签名 URL 里的 host 取自 `S3_ENDPOINT`**：当前是 `localhost:9000`，所以 URL 只能在本机浏览器打开；从局域网设备访问时需把 `S3_ENDPOINT` 改成 `http://192.168.1.100:9000` 并重启后端。
+- **签名 URL 里的 host 取自 `S3_ENDPOINT`，因此它决定了图片能否被打开**：当前本机配置是 `http://192.168.1.100:9000`（局域网 IP），所以本机与局域网设备都能打开签名 URL。**不要改回 `localhost`**——签名参数含 `X-Amz-SignedHeaders=host`，host 参与签名计算，把 URL 里的地址手工换成别的（或反向）都会得到 `SignatureDoesNotMatch`，必须由后端用正确的 host 重新签发。若在无局域网的纯单机环境使用，改回 `localhost` 也可以，但改完要重启后端与 worker。
 - **外部模型返回的图片链接 24 小时过期**，`services/generation.py` 会立即下载并转存到自有存储后才落库。新增对接外部模型时务必照此处理，不要把外部临时链接直接存进 `result`。
 - `docs/` 不入库，不要假设存在；需要背景信息时先询问用户。
 - 可选依赖 `cv`（rembg、onnxruntime、opencv-python-headless、rapidocr-onnxruntime）与 `agent`（langgraph、langchain）默认不装，本地需 `uv sync --all-extras`，Docker 构建已包含。rembg 模型权重挂在 `cv_models` 卷的 `/root/.u2net`。
