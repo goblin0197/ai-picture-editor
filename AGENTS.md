@@ -159,7 +159,7 @@ npm run lint     # oxlint
 - **实时进度用 `EventSource` 直连 `/events/runs/<id>`，不要塞进 react-query**。`hooks/useRun.ts` 是范例：SSE 提供实时状态，react-query 的快照接口提供候选图与刷新恢复能力，两者合并后按「`live.id === runId`」判定可用性——否则切换任务时旧连接的残留帧会串到新任务上。连接出错时回退去刷新快照，界面不会停在过期进度上。
 - 提交长任务后跳转到结果页（`/candidates/:runId`），不要原地等结果——任务由 worker 异步执行，页面刷新后靠快照接口恢复。
 - 页面组件只做组装：`LandingPage` 仅组合 `components/landing/*`，状态与交互下沉到分区组件（如 `LandingHero` 自己持有输入状态）。新增落地页区块放 `components/landing/`。
-- 品牌标识统一用 `components/BrandMark.tsx`（`size="sm" | "md"`，可选 `children` 放文字），落地页、登录页、工作台三处共用，不要再手写 logo。
+- 品牌标识统一用 `components/BrandMark.tsx`（`size="sm" | "md"`，可选 `children` 放文字），落地页、登录页、工作台三处共用，不要再手写 logo。浏览器标签页的 favicon（`public/favicon.svg` + PNG 回退）与 BrandMark 图形同构（ink 方底 + accent 图层符号），**改其中一处的图形要同步另一处**。
 - `sessionStorage`/`localStorage` 访问一律用 `try/catch` 包裹（见 `lib/promptDraft.ts`）——隐私模式下会直接抛异常，不能让草稿读写中断主流程。
 - 画布/图层类交互使用 `konva` + `react-konva`；路由使用 `react-router-dom`，新页面需在 `src/App.tsx` 注册。
 - 无障碍：图标等装饰性元素标注 `aria-hidden`；纯装饰性的界面示意图整个容器加 `aria-hidden`（见 `previews.tsx`）。

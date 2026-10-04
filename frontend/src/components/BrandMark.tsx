@@ -37,6 +37,7 @@ export default function BrandMark({
             strokeLinecap="round"
           />
           <circle cx="15.5" cy="3.5" r="1.55" fill="currentColor" />
+          {/* 折角处的 accent 圆点：图形与 public/favicon.svg 保持同构，改这里要同步该文件 */}
         </svg>
       </span>
       {/* 可选文字：由调用方通过 children 传入（如「AI 修图智能体」） */}
