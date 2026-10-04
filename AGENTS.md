@@ -166,14 +166,14 @@ npm run lint     # oxlint
 ## 测试与验证
 
 - 后端测试通过 `httpx.ASGITransport` 直接驱动 `app`，**不启动真实服务器**；但 `test_health.py` 会断言数据库与对象存储连通性，`test_assets.py` 与 `conftest.py` 的 `bucket` fixture 会真实读写 MinIO，`test_generation.py` 会真的调 worker 任务函数并在 SSE 上收帧——跑测试前需确保共享 PostgreSQL、MinIO、Redis 都已启动（`docker compose -f ~/Desktop/postgres/docker-compose.yml up -d` 等），否则失败。
-- **测试连的是真实服务的独立库与独立桶，不使用 mock 数据库**（见下方三条隔离设置）：`cleanup_users` 自动 fixture 在每个用例结束后 `delete(User)`，靠级联清掉 assets 与 tool_runs；`credentials` fixture 生成随机用户名避免撞车。新增写库测试请沿用这些 fixture，不要自建清理逻辑。
+- **测试连的是真实服务的独立库与独立桶，不使用 mock 数据库**（见下方三条隔离设置）：`cleanup_users` 自动 fixture 在每个用例结束后删除 `test_` 前缀的账号（上游 `0c99e7c` 起），靠级联清掉 assets 与 tool_runs；`credentials` fixture 生成 `test_<随机>` 用户名保证只删得到。新增写库测试请沿用这些 fixture，不要自建清理逻辑。
 - **`conftest.py` 顶部强制三条隔离设置**（环境变量优先级高于 `.env`，必须在 `app` 导入前设置）：
   1. `IMAGE_PROVIDER=mock` —— 否则 `.env` 切到真实模型后，测试会真的调用外部服务（实测耗时 9 秒 → 134 秒、消耗真额度），且断言 mock 特有尺寸/数量的用例会失败。
-  2. `DATABASE_URL` → **独立测试库 `retouch_test`** —— `cleanup_users` 执行的是无 WHERE 条件的 `delete(User)`（上游遗留写法），跑在开发库上会把真实账号连级联数据一起删光。可用 `TEST_DATABASE_URL` 环境变量覆盖库地址。
+  2. `DATABASE_URL` → **独立测试库 `retouch_test`** —— 上游曾因 `cleanup_users` 无条件清表导致测试连开发库会删光真实账号（已由上游 `0c99e7c` 修复为只删 `test_` 前缀），独立库仍保留作为结构性兜底，不依赖清理逻辑本身永远正确。可用 `TEST_DATABASE_URL` 环境变量覆盖库地址。
   3. `S3_BUCKET=retouch-test` —— MinIO 对象不受数据库级联删除影响，用独立桶避免测试残留污染开发桶。
 
   **这三点不要删**。测试库结构用 `DATABASE_URL=...retouch_test uv run alembic upgrade head` 初始化（或在测试库空时先跑一次迁移）。
-- **`cleanup_users` 删的是整张表，会连真实账号一起清掉**：`delete(User)` 没有 WHERE 条件。上游在很后面的提交里才把它改成只删测试账号。**隔离靠上面的独立测试库**，不要再依赖「跑测试前先确认没重要数据」这种人肉措施；跑完测试若发现开发桶有多余对象（各以 `users/<空闲 UUID>/` 为前缀），需手工清理。
+- **`cleanup_users` 只删 `test_` 前缀账号**（上游 `0c99e7c` 的修复，此前是无条件 `delete(User)` 整表清空，曾把开发库真实账号连级联数据一起删光）。已实测：不带前缀的账号跑完整套测试后依然幸存。注意两点：测试库里手动建的**不带** `test_` 前缀的账号不会被自动清理，需自行删除；MinIO 对象不受数据库级联删除影响，仍靠独立桶 `retouch-test` 隔离。
 - **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `generate_images` 同步执行。跑完一轮测试 Redis 里会留下若干 `arq:result:*` 键（TTL 约 1 小时自清）；此时启动 worker 会把它们再捡一遍，但 `is_terminal` 守卫让它们瞬间返回——这是预期行为，不是异常。
 - `pytest` 的 `asyncio_default_fixture_loop_scope` 与 `asyncio_default_test_loop_scope` 均为 `session`：数据库引擎在模块级创建，所有测试必须共享同一事件循环，否则连接跨循环复用会失败。**不要**改成 function 级。
 - 前端暂无测试框架。改动前端后至少执行 `npm run build`（等价于类型检查）与 `npm run lint`。
@@ -181,7 +181,7 @@ npm run lint     # oxlint
 ## 已知坑
 
 - **PostgreSQL 是 5433，不是默认的 5432**：默认端口已被其他项目的 postgres 占用，连接串照默认值写会连到别人的库上。MinIO 用默认的 9000/9001。Redis 也是默认的 6379，但**必须带库号**——写成 `redis://localhost:6379` 会落到 db 0，与占用该库的其他项目串数据。
-- **当前 `uv run ruff check .` 会报 2 个 E501 行超长错误**，都在 `backend/tests/test_generation.py` 那两行硬编码的 `test_intruder` 注册上（第 95、122 行）。这是上游遗留问题，它在很后面的提交里才换成 `other_credentials` fixture 一并修掉。**本地不要擅自修**，否则与上游产生差异、影响对照学习。
+- **当前 `uv run ruff check .` 会报 3 个 E501 行超长错误**，全部是测试里硬编码的长注册行：`backend/tests/test_generation.py` 第 95、122 行（`test_intruder`，104 字符）与 `backend/tests/test_assets.py` 第 78 行（`test_otheruser`，105 字符，上游 `0c99e7c` 自带）。这是上游遗留问题，上游在很后面的提交里才换成 `other_credentials` fixture 一并修掉。**本地不要擅自修**，否则与上游产生差异、影响对照学习。
 - **改了数据库结构后要重启后端**：asyncpg 会缓存预编译语句计划，运行期间执行 `ALTER TABLE`（如 `timestamptz` 迁移）会让缓存计划失效，报 `InvalidCachedStatementError`。SQLAlchemy 的 asyncpg 方言会自动清缓存、下一次请求即恢复；但更稳妥的做法是「先停服务 → 跑迁移 → 再启动」。
 - **MinIO 的桶由 `storage.ensure_bucket` 在应用启动时自动创建**（`main.py` 的 `lifespan`，`/api/health` 也会调用它）。若手工删掉了桶，重启后端或请求一次健康检查即可恢复，不必手动 `mc mb`。MinIO 侧的约定见 `~/Desktop/minio/README.md`。
 - **签名 URL 里的 host 取自 `S3_ENDPOINT`，因此它决定了图片能否被打开**：当前本机配置是 `http://192.168.1.100:9000`（局域网 IP），所以本机与局域网设备都能打开签名 URL。**不要改回 `localhost`**——签名参数含 `X-Amz-SignedHeaders=host`，host 参与签名计算，把 URL 里的地址手工换成别的（或反向）都会得到 `SignatureDoesNotMatch`，必须由后端用正确的 host 重新签发。若在无局域网的纯单机环境使用，改回 `localhost` 也可以，但改完要重启后端与 worker。
