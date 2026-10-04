@@ -6,7 +6,7 @@
 
 AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成商品图，或上传图片后继续编辑，自动串联抠图、换背景、局部修改与多尺寸导出。
 
-当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**、**落地页与视觉规范**、**文生图链路与候选选图**已就绪；编辑、批量、导出尚未实现，`/editor`、`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S4、S11 等）。
+当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**、**落地页与视觉规范**、**文生图链路与候选选图**、**编辑会话与画布骨架**（S4 起步：会话增删查改、图片墙切换、改名、编辑历史、Konva 画布缩放/平移/适应）已就绪；批量、导出尚未实现，`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S11 等）。
 
 ## 目录结构
 
@@ -21,19 +21,22 @@ AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成�
 | `backend/app/events.py` | Redis 发布订阅，向 SSE 推送任务进度 |
 | `backend/app/queue.py` | ARQ 投递入口，`enqueue` 以 run id 作为 job id 保证幂等 |
 | `backend/app/ratios.py` | 输出比例枚举与像素尺寸（与交付尺寸对齐） |
+| `backend/app/layers.py` | 画布文档结构（`LayerDocument`/`Layer` 等）：工具只改文档，像素合成由渲染环节按文档执行 |
 | `backend/app/providers/` | 图像模型适配层：`base.py` 定义 Protocol，`mock`/`dashscope` 各一份实现，另有本地新增的 `openai_images.py` |
 | `backend/app/routers/` | 路由模块，每个模块自带 `prefix` 与 `tags`；`events.py` 是 SSE，单独挂载 |
-| `backend/app/services/` | 业务逻辑（`auth` 账号、`assets` 素材、`images` 图片校验、`runs` 任务状态、`generation` 生成编排） |
+| `backend/app/services/` | 业务逻辑（`auth` 账号、`assets` 素材、`images` 图片校验、`runs` 任务状态、`generation` 生成编排、`sessions` 编辑会话） |
 | `backend/app/schemas/` | Pydantic 出参模型，`XxxOut.of(orm_obj)` 从 ORM 对象构造 |
 | `backend/app/tasks/` | ARQ 异步任务，`__init__.py` 的 `TASKS` 列表即 worker 注册表 |
 | `backend/app/models/` | SQLAlchemy ORM 模型，`base.py` 提供 `UUIDBase`、`TIMESTAMPTZ` 与 `enum_column` |
 | `backend/migrations/versions/` | Alembic 迁移脚本，文件名 `日期_序号_描述.py` |
 | `backend/tests/` | pytest 测试（`asyncio_mode = "auto"`，直接用顶层 `async def`） |
 | `backend/scripts/` | 手工自检脚本，如 `e2e_generation.py` 跑通整条生成链路 |
-| `frontend/src/api/` | `client.ts` 是通用请求出口；`auth.ts`/`assets.ts`/`runs.ts` 是分领域封装 |
-| `frontend/src/hooks/` | React Query 封装（`useAuth`、`useAssets`、`useRun`），含查询键与失效策略；`useRun` 还负责订阅 SSE |
+| `frontend/src/api/` | `client.ts` 是通用请求出口；`auth.ts`/`assets.ts`/`runs.ts`/`sessions.ts` 是分领域封装 |
+| `frontend/src/hooks/` | React Query 封装（`useAuth`、`useAssets`、`useRun`、`useSessions`），含查询键与失效策略；`useRun` 还负责订阅 SSE |
 | `frontend/src/components/` | 可复用组件（`BrandMark`、`AssetCard`、`ImageDropzone`、`GenerateForm`） |
 | `frontend/src/components/landing/` | 落地页分区组件，`previews.tsx` 用纯样式拼界面示意图（无图片资源） |
+| `frontend/src/components/editor/` | 编辑器组件：`CanvasStage`（Konva 画布）、`EditorToolbar`、`ImageWall`（图片墙）、`LayerPanel`（图层+历史）、`SessionSidebar` |
+| `frontend/src/stores/` | zustand 全局状态：`canvasView.ts` 管画布缩放/平移等**视图变换**（不进服务端、不参与导出） |
 | `frontend/src/layouts/` | `RequireAuth`（登录守卫）、`WorkbenchLayout`（工作台外壳） |
 | `frontend/src/lib/` | 无 UI 依赖的工具（`format`、`promptDraft` 草稿读写） |
 | `frontend/src/index.css` | Tailwind v4 `@theme` 设计令牌 + `@utility` 自定义工具类（**无 tailwind.config.js**） |
@@ -48,10 +51,10 @@ AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成�
 | 前端 Vite dev | 7301 | 本仓库 |
 | 后端 API | 7302 | 本仓库 |
 | PostgreSQL | **5433**（默认 5432 已被其他项目占用） | 共享服务（`~/Desktop/postgres`） |
-| Redis | 6379，本项目占用 **db 2** | 共享服务（`~/Desktop/redis`） |
+| Redis | 6379，本项目占用 **db 2**（开发）与 **db 3**（pytest 自动改用，见 `conftest.py` 的 `isolated_redis`） | 共享服务（`~/Desktop/redis`） |
 | MinIO S3 API / 控制台 | 9000 / 9001 | 共享服务（`~/Desktop/minio`） |
 
-共享服务均以 host 网络运行并监听 `0.0.0.0`，家庭内网的其他设备可直接连接（本机用 `127.0.0.1`，局域网用 `192.168.1.100`）。注意 PostgreSQL 从局域网连接必须带密码，本机回环则免密。`db 0` 与 `db 1` 已被其他项目占用，本项目固定用 `db 2`；新增接入项目请另选空闲库号，不要改本项目的库号。库号分配台账与各项目占用情况见 `~/Desktop/redis/README.md`（MinIO 桶约定见 `~/Desktop/minio/README.md`，PostgreSQL 认证规则见 `~/Desktop/postgres/README.md`）。
+共享服务均以 host 网络运行并监听 `0.0.0.0`，家庭内网的其他设备可直接连接（本机用 `127.0.0.1`，局域网用 `192.168.1.100`）。注意 PostgreSQL 从局域网连接必须带密码，本机回环则免密。`db 0` 与 `db 1` 已被其他项目占用，本项目开发固定用 `db 2`、测试用 `db 3`（**本地适配**：上游默认测试用 db 1，与 ruoyi-ai 冲突，已在 conftest 改为 3）；新增接入项目请另选空闲库号，不要改本项目的库号。库号分配台账与各项目占用情况见 `~/Desktop/redis/README.md`（MinIO 桶约定见 `~/Desktop/minio/README.md`，PostgreSQL 认证规则见 `~/Desktop/postgres/README.md`）。
 
 ## 常用命令
 
@@ -123,7 +126,7 @@ npm run lint     # oxlint
 
 **认证依赖 `CurrentUser`。** 需要登录的接口注入 `app/deps.py` 的 `CurrentUser`（`Annotated[User, Depends(...)]`），它从 `session` Cookie 解析 JWT；无效一律按 401 处理。会话 Cookie 是 `HttpOnly; SameSite=lax`，前端拿不到也不该去读它——判断登录态走 `useAuth` 的 `useCurrentUser`（未登录时后端返回 401，前端据此视为未认证）。
 
-**素材接口一律按 `user_id` 过滤。** 查询素材必须用 `services/assets.get_for_user` 这类「主键 + user_id 联合条件」的方式，返回 404 而非 403，避免泄露他人资源是否存在；对象存储的 key 也以 `users/<user_id>/` 为前缀隔离。
+**用户资源接口一律按 `user_id` 过滤。** 查询素材必须用 `services/assets.get_for_user`、查询会话必须用 `services/sessions.get_for_user` 这类「主键 + user_id 联合条件」的方式，返回 404 而非 403，避免泄露他人资源是否存在；对象存储的 key 也以 `users/<user_id>/` 为前缀隔离。
 
 **对象存储经 `app/storage.py` 访问，不要直接调 boto3。** 该模块用 `lru_cache` 复用客户端，并把同步调用包在 `asyncio.to_thread` 里；桶在 `main.py` 的 `lifespan` 中自动创建（`ensure_bucket`），无需手工建桶。对外一律用签名 URL（`signed_url`），不回传原始对象直链。
 
@@ -155,6 +158,7 @@ npm run lint     # oxlint
 - 自定义工具类定义在 `index.css` 的 `@utility` 中（`bg-glow` 顶部光晕、`bg-grid` 网格底纹），不要为一次性样式另建 CSS 文件。
 - 动效统一用 `animate-rise` 入场（配 `style={{ animationDelay }}` 做错峰），并依赖 `index.css` 中已有的 `prefers-reduced-motion` 全局降级——新增动画无需自己处理该媒体查询。
 - 服务端状态用 `@tanstack/react-query`，请求统一走 `@/api/client` 的 `api`；错误已归一化为 `ApiError`（携带 `status` 与后端 `detail`）。**例外**：文件上传见 `api/assets.ts`，因需要 `FormData` 而直接用 `fetch`（不要给它设 `Content-Type`，让浏览器带 boundary），但仍需按同样方式抛 `ApiError`。
+- **zustand 只放纯视图状态**（`stores/canvasView.ts` 的画布缩放/平移——不进服务端、不参与导出）；凡需要落服务端或跨页恢复的状态一律走 react-query + 后端接口，不要把业务状态塞进 zustand。
 - 每个领域一个 API 模块（`api/auth.ts`、`api/assets.ts`、`api/runs.ts`），组件不直接写请求；配套的查询键与缓存失效放在 `hooks/` 下（如 `useUploadAsset` 成功后失效 `['assets']`）。
 - **实时进度用 `EventSource` 直连 `/events/runs/<id>`，不要塞进 react-query**。`hooks/useRun.ts` 是范例：SSE 提供实时状态，react-query 的快照接口提供候选图与刷新恢复能力，两者合并后按「`live.id === runId`」判定可用性——否则切换任务时旧连接的残留帧会串到新任务上。连接出错时回退去刷新快照，界面不会停在过期进度上。
 - 提交长任务后跳转到结果页（`/candidates/:runId`），不要原地等结果——任务由 worker 异步执行，页面刷新后靠快照接口恢复。
@@ -173,16 +177,16 @@ npm run lint     # oxlint
   2. `DATABASE_URL` → **独立测试库 `retouch_test`** —— 上游曾因 `cleanup_users` 无条件清表导致测试连开发库会删光真实账号（已由上游 `0c99e7c` 修复为只删 `test_` 前缀），独立库仍保留作为结构性兜底，不依赖清理逻辑本身永远正确。可用 `TEST_DATABASE_URL` 环境变量覆盖库地址。
   3. `S3_BUCKET=retouch-test` —— MinIO 对象不受数据库级联删除影响，用独立桶避免测试残留污染开发桶。
 
-  **这三点不要删**。测试库结构用 `DATABASE_URL=...retouch_test uv run alembic upgrade head` 初始化（或在测试库空时先跑一次迁移）。
+  **这三点不要删**。测试库结构用 `DATABASE_URL=...retouch_test uv run alembic upgrade head` 初始化（或在测试库空时先跑一次迁移）。此外上游 `e2c84f5` 起还有两个 session 级自动 fixture 做运行时兜底：`mock_provider`（临时改 `settings.image_provider` 并清 `get_image_provider` 缓存，测试结束还原）与 `isolated_redis`（把 Redis 挪到测试库 db 3——**本地适配**为 `TEST_REDIS_DB = 3`，上游默认 db 1 与 ruoyi-ai 冲突；queue 连接池惰性创建于测试进程内，因此队列与 SSE 都落在 db 3）。
 - **`cleanup_users` 只删 `test_` 前缀账号**（上游 `0c99e7c` 的修复，此前是无条件 `delete(User)` 整表清空，曾把开发库真实账号连级联数据一起删光）。已实测：不带前缀的账号跑完整套测试后依然幸存。注意两点：测试库里手动建的**不带** `test_` 前缀的账号不会被自动清理，需自行删除；MinIO 对象不受数据库级联删除影响，仍靠独立桶 `retouch-test` 隔离。
-- **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `generate_images` 同步执行。跑完一轮测试 Redis 里会留下若干 `arq:result:*` 键（TTL 约 1 小时自清）；此时启动 worker 会把它们再捡一遍，但 `is_terminal` 守卫让它们瞬间返回——这是预期行为，不是异常。
+- **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `generate_images` 同步执行。上游 `e2c84f5` 起 `isolated_redis` 把测试的队列与 SSE 都指向 db 3，`arq:result:*` 残留键落在 db 3（TTL 约 1 小时自清），开发用的 db 2 不再受影响；db 3 里若有残留键，启动 worker 也只会被 `is_terminal` 守卫瞬间消化——这是预期行为，不是异常。
 - `pytest` 的 `asyncio_default_fixture_loop_scope` 与 `asyncio_default_test_loop_scope` 均为 `session`：数据库引擎在模块级创建，所有测试必须共享同一事件循环，否则连接跨循环复用会失败。**不要**改成 function 级。
 - 前端暂无测试框架。改动前端后至少执行 `npm run build`（等价于类型检查）与 `npm run lint`。
 
 ## 已知坑
 
 - **PostgreSQL 是 5433，不是默认的 5432**：默认端口已被其他项目的 postgres 占用，连接串照默认值写会连到别人的库上。MinIO 用默认的 9000/9001。Redis 也是默认的 6379，但**必须带库号**——写成 `redis://localhost:6379` 会落到 db 0，与占用该库的其他项目串数据。
-- **当前 `uv run ruff check .` 会报 3 个 E501 行超长错误**，全部是测试里硬编码的长注册行：`backend/tests/test_generation.py` 第 95、122 行（`test_intruder`，104 字符）与 `backend/tests/test_assets.py` 第 78 行（`test_otheruser`，105 字符，上游 `0c99e7c` 自带）。这是上游遗留问题，上游在很后面的提交里才换成 `other_credentials` fixture 一并修掉。**本地不要擅自修**，否则与上游产生差异、影响对照学习。
+- **`uv run ruff check .` 当前应为 0 错误**（全绿）。此前测试里有 3 个 E501 长行（`test_generation.py` 两处 `test_intruder`、`test_assets.py` 一处 `test_otheruser`），已由上游 `e2c84f5` 引入 `other_credentials` fixture 一并修掉。若再出现 lint 报错，按回归对待、查明原因，不要顺手压行。
 - **改了数据库结构后要重启后端**：asyncpg 会缓存预编译语句计划，运行期间执行 `ALTER TABLE`（如 `timestamptz` 迁移）会让缓存计划失效，报 `InvalidCachedStatementError`。SQLAlchemy 的 asyncpg 方言会自动清缓存、下一次请求即恢复；但更稳妥的做法是「先停服务 → 跑迁移 → 再启动」。
 - **MinIO 的桶由 `storage.ensure_bucket` 在应用启动时自动创建**（`main.py` 的 `lifespan`，`/api/health` 也会调用它）。若手工删掉了桶，重启后端或请求一次健康检查即可恢复，不必手动 `mc mb`。MinIO 侧的约定见 `~/Desktop/minio/README.md`。
 - **签名 URL 里的 host 取自 `S3_ENDPOINT`，因此它决定了图片能否被打开**：当前本机配置是 `http://192.168.1.100:9000`（局域网 IP），所以本机与局域网设备都能打开签名 URL。**不要改回 `localhost`**——签名参数含 `X-Amz-SignedHeaders=host`，host 参与签名计算，把 URL 里的地址手工换成别的（或反向）都会得到 `SignatureDoesNotMatch`，必须由后端用正确的 host 重新签发。若在无局域网的纯单机环境使用，改回 `localhost` 也可以，但改完要重启后端与 worker。
