@@ -73,6 +73,7 @@ docker compose -f ~/Desktop/minio/docker-compose.yml up -d
 ```bash
 uv sync --all-extras                      # 首次；--all-extras 才会装上 cv / agent 可选依赖
 uv run uvicorn app.main:app --reload --port 7302
+uv run python -m app                       # 等价启动入口（端口取配置 api_port，可用 API_PORT 覆盖；无热重载）
 uv run arq app.worker.WorkerSettings      # worker，生成类接口必须它在线才跑得动
 uv run pytest                             # 测试
 uv run ruff check .                       # lint（line-length 100，规则 E/F/I/UP/B）
