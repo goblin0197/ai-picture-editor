@@ -70,7 +70,7 @@ export function useRun(runId: string | null) {
     progress: current?.progress ?? run?.progress ?? 0,
     stage: current?.stage ?? run?.stage ?? '',
     error: current?.error ?? run?.error ?? null,
-    prompt: run?.prompt ?? null,
+    prompt: run?.prompt ?? null, // 提示词只在快照里（SSE 进度帧不带），用于给会话起默认标题
     candidates: run?.candidates ?? [],
     isLoading: snapshot.isPending,
     notFound: snapshot.isError,

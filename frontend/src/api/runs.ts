@@ -16,7 +16,7 @@ export type Run = {
   progress: number
   stage: string
   error: string | null
-  prompt: string | null
+  prompt: string | null // 发起任务时的提示词；编辑会话用素材名回显，可能为 null
   candidates: Asset[]
 }
 

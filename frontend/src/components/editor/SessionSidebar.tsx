@@ -1,3 +1,4 @@
+// 编辑器左栏：新对话入口 + 历史会话列表（NavLink 高亮当前会话）。
 import { Link, NavLink } from 'react-router-dom'
 
 import { useSessions } from '@/hooks/useSessions'
@@ -8,6 +9,7 @@ export default function SessionSidebar({ activeId }: { activeId?: string }) {
 
   return (
     <aside className="border-line bg-paper flex w-60 shrink-0 flex-col border-r">
+      {/* 「新对话」跳回创作页——本步实现的会话都从创作/候选页发起 */}
       <div className="border-line border-b p-3">
         <Link
           to="/create"
@@ -28,6 +30,7 @@ export default function SessionSidebar({ activeId }: { activeId?: string }) {
           <ul className="space-y-0.5">
             {sessions.map((session) => (
               <li key={session.id}>
+                {/* NavLink 在路径匹配时自动加 active 类；这里手动比对 id 控制高亮 */}
                 <NavLink
                   to={`/editor/${session.id}`}
                   className={`block rounded-[10px] px-2.5 py-2 transition-colors ${

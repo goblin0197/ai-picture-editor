@@ -23,6 +23,7 @@ export default function CreatePage() {
   const generate = useGenerate()
   const createSession = useCreateSession()
 
+  // openEditor：把一张素材建成编辑会话并跳进编辑器；标题留空由后端给默认值。
   const openEditor = (assetId: string) =>
     createSession.mutate(
       { current_asset_id: assetId },

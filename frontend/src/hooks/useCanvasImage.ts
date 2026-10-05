@@ -1,3 +1,4 @@
+// 把签名 URL 解码为 Konva 可直接绘制的位图：内部就是 new Image() 预加载 + 状态管理。
 import { useEffect, useState } from 'react'
 
 /** 把 URL 解码为 Konva 可直接绘制的位图。 */

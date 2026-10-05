@@ -1,10 +1,13 @@
+// 右侧信息面板：图层列表、画布属性、编辑历史三个区块。
 import type { Asset } from '@/api/assets'
 import { ACTION_LABELS, type Layer, type SessionDetail } from '@/api/sessions'
 import { useSessionHistory } from '@/hooks/useSessions'
 import { formatBytes, formatDateTime } from '@/lib/format'
 
 export default function LayerPanel({ session }: { session: SessionDetail }) {
+  // 当前画布显示的素材（属性区展示它的格式/大小/透明通道）
   const current = session.assets.find((asset) => asset.id === session.current_asset_id)
+  // 编辑历史（最新在前）
   const { data: history = [] } = useSessionHistory(session.id)
 
   return (
@@ -28,6 +31,7 @@ export default function LayerPanel({ session }: { session: SessionDetail }) {
           <ol className="space-y-1.5">
             {history.map((entry) => (
               <li key={entry.seq} className="flex items-baseline justify-between gap-2 text-xs">
+                {/* 未知动作名直接原样展示，保证向前兼容 */}
                 <span className="text-ink">{ACTION_LABELS[entry.action] ?? entry.action}</span>
                 <span className="text-faint shrink-0 tabular-nums">
                   {formatDateTime(entry.created_at)}
@@ -41,6 +45,7 @@ export default function LayerPanel({ session }: { session: SessionDetail }) {
   )
 }
 
+// 单行图层：名称 + 尺寸 + 锁定标记（锁定态对应底图）
 function LayerRow({ layer }: { layer: Layer }) {
   return (
     <li className="border-line rounded-control flex items-center gap-2 border px-2.5 py-2">
@@ -53,6 +58,7 @@ function LayerRow({ layer }: { layer: Layer }) {
   )
 }
 
+// 属性区：画布尺寸、修订号，以及当前素材的格式/大小/透明通道
 function Properties({
   document,
   current,
@@ -62,6 +68,7 @@ function Properties({
   current: Asset | undefined
   revision: number
 }) {
+  // 用 [label, value] 数组统一渲染成 dl
   const rows: [string, string][] = [
     ['画布', `${document.width} × ${document.height}`],
     ['修订号', String(revision)],
@@ -84,6 +91,7 @@ function Properties({
   )
 }
 
+// 通用区块壳：标题 + 内容，区块间用分隔线
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border-line border-b px-4 py-4 last:border-b-0">
