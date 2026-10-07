@@ -1,3 +1,5 @@
+# 通用工具任务：worker 消费的唯一入口，按 run.tool 分发到注册表里的具体工具。
+# （原 generate_images 任务已被它取代——新增工具不再需要新任务函数。）
 import uuid
 
 from app.db import SessionFactory

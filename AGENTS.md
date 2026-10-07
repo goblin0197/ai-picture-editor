@@ -6,7 +6,7 @@
 
 AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成商品图，或上传图片后继续编辑，自动串联抠图、换背景、局部修改与多尺寸导出。
 
-当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**、**落地页与视觉规范**、**文生图链路与候选选图**、**编辑会话与画布骨架**（S4 起步：会话增删查改、图片墙切换、改名、编辑历史、Konva 画布缩放/平移/适应）已就绪；批量、导出尚未实现，`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S11 等）。
+当前进度：本地基础设施、健康检查、ARQ 投递链路、前端外壳、**账号注册登录**、**素材上传与对象存储**、**落地页与视觉规范**、**文生图链路与候选选图**、**编辑会话与画布骨架**（S4 起步：会话增删查改、图片墙切换、改名、编辑历史、Konva 画布缩放/平移/适应）、**工具注册表与自然语言单步执行**（S4 第二步：`ToolSpec` 统一界面与 Agent 入口、对话式左栏、langgraph 三节点规划图）已就绪；批量、导出尚未实现，`/batch` 等仍为占位页并标注了计划中的开发步骤编号（S11 等）。
 
 ## 目录结构
 
@@ -22,20 +22,22 @@ AI 修图智能体（compose 项目名 `ai-retouch-agent`）：一句话生成�
 | `backend/app/queue.py` | ARQ 投递入口，`enqueue` 以 run id 作为 job id 保证幂等 |
 | `backend/app/ratios.py` | 输出比例枚举与像素尺寸（与交付尺寸对齐） |
 | `backend/app/layers.py` | 画布文档结构（`LayerDocument`/`Layer` 等）：工具只改文档，像素合成由渲染环节按文档执行 |
+| `backend/app/tools/` | 工具注册表：`base.py` 定义 `ToolSpec`（params 校验与模型函数签名共用），`__init__.py` 的 `SPECS` 即登记处 |
+| `backend/app/agent/` | 对话指令规划（langgraph）：`graph.py` 的 plan→verify→dispatch 三节点图，`llm.py` 是绑定全部工具的规划模型 |
 | `backend/app/providers/` | 图像模型适配层：`base.py` 定义 Protocol，`mock`/`dashscope` 各一份实现，另有本地新增的 `openai_images.py` |
 | `backend/app/routers/` | 路由模块，每个模块自带 `prefix` 与 `tags`；`events.py` 是 SSE，单独挂载 |
-| `backend/app/services/` | 业务逻辑（`auth` 账号、`assets` 素材、`images` 图片校验、`runs` 任务状态、`generation` 生成编排、`sessions` 编辑会话） |
+| `backend/app/services/` | 业务逻辑（`auth` 账号、`assets` 素材、`images` 图片校验、`runs` 任务状态、`generation` 生成编排、`sessions` 编辑会话、`tools` 工具执行中枢、`agent` 对话轮次落库） |
 | `backend/app/schemas/` | Pydantic 出参模型，`XxxOut.of(orm_obj)` 从 ORM 对象构造 |
 | `backend/app/tasks/` | ARQ 异步任务，`__init__.py` 的 `TASKS` 列表即 worker 注册表 |
 | `backend/app/models/` | SQLAlchemy ORM 模型，`base.py` 提供 `UUIDBase`、`TIMESTAMPTZ` 与 `enum_column` |
 | `backend/migrations/versions/` | Alembic 迁移脚本，文件名 `日期_序号_描述.py` |
 | `backend/tests/` | pytest 测试（`asyncio_mode = "auto"`，直接用顶层 `async def`） |
 | `backend/scripts/` | 手工自检脚本，如 `e2e_generation.py` 跑通整条生成链路 |
-| `frontend/src/api/` | `client.ts` 是通用请求出口；`auth.ts`/`assets.ts`/`runs.ts`/`sessions.ts` 是分领域封装 |
-| `frontend/src/hooks/` | React Query 封装（`useAuth`、`useAssets`、`useRun`、`useSessions`），含查询键与失效策略；`useRun` 还负责订阅 SSE |
+| `frontend/src/api/` | `client.ts` 是通用请求出口；`auth.ts`/`assets.ts`/`runs.ts`/`sessions.ts`/`agent.ts` 是分领域封装 |
+| `frontend/src/hooks/` | React Query 封装（`useAuth`、`useAssets`、`useRun`、`useSessions`、`useAgent`），含查询键与失效策略；`useRun` 还负责订阅 SSE |
 | `frontend/src/components/` | 可复用组件（`BrandMark`、`AssetCard`、`ImageDropzone`、`GenerateForm`） |
 | `frontend/src/components/landing/` | 落地页分区组件，`previews.tsx` 用纯样式拼界面示意图（无图片资源） |
-| `frontend/src/components/editor/` | 编辑器组件：`CanvasStage`（Konva 画布）、`EditorToolbar`、`ImageWall`（图片墙）、`LayerPanel`（图层+历史）、`SessionSidebar` |
+| `frontend/src/components/editor/` | 编辑器组件：`CanvasStage`（Konva 画布）、`EditorToolbar`、`ImageWall`（图片墙）、`LayerPanel`（图层+历史）、`SessionSidebar`（对话式左栏）、`AgentConversation`/`MessageComposer`（对话区） |
 | `frontend/src/stores/` | zustand 全局状态：`canvasView.ts` 管画布缩放/平移等**视图变换**（不进服务端、不参与导出） |
 | `frontend/src/layouts/` | `RequireAuth`（登录守卫）、`WorkbenchLayout`（工作台外壳） |
 | `frontend/src/lib/` | 无 UI 依赖的工具（`format`、`promptDraft` 草稿读写） |
@@ -102,15 +104,17 @@ npm run lint     # oxlint
 
 **API 前缀只在 `main.py` 集中声明。** `main.py` 用 `APIRouter(prefix="/api")` 聚合各 router，路由模块自身只写业务前缀（如 `/health`），重复添加 `/api` 会导致 404。接口文档在 `/api/docs`。**唯一例外是 SSE**：`events.router` 挂在 `/events`（不在 `/api` 下），便于反向代理单独关闭缓冲；前端 `/events` 也已在 `vite.config.ts` 里代理到 7302，两边要同步改。
 
-**长任务走「建记录 → 投递 → worker 消费」三步，不要同步跑。** 参考 `services/runs.py` + `queue.py` + `tasks/`：接口建 `ToolRun` 并返回 202，用 `enqueue` 投递，worker 侧的 `tasks/generate.py` 负责执行。三条硬约束：
+**长任务走「建记录 → 投递 → worker 消费」三步，不要同步跑。** 参考 `services/tools.py`（`submit` 收拢校验/建记录/投递）+ `queue.py` + `tasks/tools.py`（通用 `run_tool` 任务按 `run.tool` 分发）：接口建 `ToolRun` 并返回 202，worker 消费时经 `services/tools.execute` 统一外壳执行。三条硬约束：
 
 1. **任务必须以 run id 作为 job id**（`queue.enqueue` 里 `_job_id=str(run_id)`），重复投递才不会二次执行。
-2. **worker 消费前先查状态，终态直接返回**（`tasks/generate.py` 的 `run.status.is_terminal` 守卫），防队列重投与 worker 重启后的重复消费。
-3. **任何异常都必须落终态**。否则订阅 SSE 的客户端会一直空等——`tasks/generate.py` 里那个兜底 `except Exception` 就是为了这个，不要删。
+2. **worker 消费前先查状态，终态直接返回**（`tasks/tools.py` 的 `run.status.is_terminal` 守卫），防队列重投与 worker 重启后的重复消费。
+3. **任何异常都必须落终态**。否则订阅 SSE 的客户端会一直空等——`services/tools.execute` 里那个兜底 `except Exception` 就是为了这个，不要删。具体工具的 `handler` 只返回结果 dict，不自行做状态流转。
 
 **进度推送经 Redis 发布订阅，不落库轮询。** worker 侧 `services/runs.py` 每次状态变更后 `events.publish`，接口侧 `routers/events.py` 订阅同一频道转成 SSE。注意它**先订阅再读快照**的顺序：反过来的话，任务在两步之间结束会让连接一直空等。任务终态时服务端主动断开（客户端重连会先收到快照）。
 
-**新增异步任务必须注册。** 在 `app/tasks/` 写函数后，追加到 `app/tasks/__init__.py` 的 `TASKS` 列表，否则 worker 不会加载。任务签名固定为 `async def fn(ctx: dict)`。
+**新增异步任务必须注册。** 在 `app/tasks/` 写函数后，追加到 `app/tasks/__init__.py` 的 `TASKS` 列表，否则 worker 不会加载。任务签名固定为 `async def fn(ctx: dict)`。注意 `c200587` 起工具类任务共用一个 `run_tool` 入口，新增修图能力**不需要**新任务函数。
+
+**新增修图能力在 `tools/__init__.py` 的 `SPECS` 登记 `ToolSpec`。** `params` 用 Pydantic 模型（服务端校验与 Agent 规划模型的函数签名共用一份，不会漂移）；`handler` 只写业务、返回结果 dict（结果里 `asset_ids` 指向的素材会自动进发起会话的图片墙并写编辑记录）；素材 ID、随机种子这类应由服务端填的参数放进 `agent_hidden`，不暴露给模型。登记后界面与 Agent 同时生效。**Agent 的安全底线**：模型产出的计划必须过 `agent/graph.py` 的 `_verify`（工具名在注册表内 + 参数过校验）才能执行，不要绕过。
 
 **新增模型提供方在 `providers/__init__.py` 登记。** 实现 `providers/base.py` 的 `ImageProvider` Protocol（`generate` 返回图片字节列表，失败抛 `ProviderError`；`on_progress` 回调用于上报进度），然后在 `get_image_provider()` 的分支里加上。调用方只认 Protocol，新增平台不改调用方。
 
@@ -179,18 +183,20 @@ npm run lint     # oxlint
 
   **这三点不要删**。测试库结构用 `DATABASE_URL=...retouch_test uv run alembic upgrade head` 初始化（或在测试库空时先跑一次迁移）。此外上游 `e2c84f5` 起还有两个 session 级自动 fixture 做运行时兜底：`mock_provider`（临时改 `settings.image_provider` 并清 `get_image_provider` 缓存，测试结束还原）与 `isolated_redis`（把 Redis 挪到测试库 db 3——**本地适配**为 `TEST_REDIS_DB = 3`，上游默认 db 1 与 ruoyi-ai 冲突；queue 连接池惰性创建于测试进程内，因此队列与 SSE 都落在 db 3）。
 - **`cleanup_users` 只删 `test_` 前缀账号**（上游 `0c99e7c` 的修复，此前是无条件 `delete(User)` 整表清空，曾把开发库真实账号连级联数据一起删光）。已实测：不带前缀的账号跑完整套测试后依然幸存。注意两点：测试库里手动建的**不带** `test_` 前缀的账号不会被自动清理，需自行删除；MinIO 对象不受数据库级联删除影响，仍靠独立桶 `retouch-test` 隔离。
-- **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `generate_images` 同步执行。上游 `e2c84f5` 起 `isolated_redis` 把测试的队列与 SSE 都指向 db 3，`arq:result:*` 残留键落在 db 3（TTL 约 1 小时自清），开发用的 db 2 不再受影响；db 3 里若有残留键，启动 worker 也只会被 `is_terminal` 守卫瞬间消化——这是预期行为，不是异常。
+- **测试会真的往 Redis 队列投递任务**（`POST /api/generations` 内部调 `enqueue`），而 `test_generation.py` 又直接调 `run_tool` 同步执行。上游 `e2c84f5` 起 `isolated_redis` 把测试的队列与 SSE 都指向 db 3，`arq:result:*` 残留键落在 db 3（TTL 约 1 小时自清），开发用的 db 2 不再受影响；db 3 里若有残留键，启动 worker 也只会被 `is_terminal` 守卫瞬间消化——这是预期行为，不是异常。
+- **Agent 测试不调真实 LLM**：`test_agent.py` 用 `FakePlanner`（monkeypatch `graph.planner`）模拟模型回复（工具调用/纯文本两种形态），覆盖计划下发、参数拦截、画布事实注入等；`test_missing_api_key_fails_the_turn` 会临时清空 `dashscope_api_key` 并 `planner.cache_clear()`。**agent 可选依赖（langgraph、langchain-core、langchain-openai）必须已安装**（`uv sync --all-extras`），否则 `test_agent.py` 的 import 直接失败。
 - `pytest` 的 `asyncio_default_fixture_loop_scope` 与 `asyncio_default_test_loop_scope` 均为 `session`：数据库引擎在模块级创建，所有测试必须共享同一事件循环，否则连接跨循环复用会失败。**不要**改成 function 级。
 - 前端暂无测试框架。改动前端后至少执行 `npm run build`（等价于类型检查）与 `npm run lint`。
 
 ## 已知坑
 
 - **PostgreSQL 是 5433，不是默认的 5432**：默认端口已被其他项目的 postgres 占用，连接串照默认值写会连到别人的库上。MinIO 用默认的 9000/9001。Redis 也是默认的 6379，但**必须带库号**——写成 `redis://localhost:6379` 会落到 db 0，与占用该库的其他项目串数据。
-- **`uv run ruff check .` 当前应为 0 错误**（全绿）。此前测试里有 3 个 E501 长行（`test_generation.py` 两处 `test_intruder`、`test_assets.py` 一处 `test_otheruser`），已由上游 `e2c84f5` 引入 `other_credentials` fixture 一并修掉。若再出现 lint 报错，按回归对待、查明原因，不要顺手压行。
+- **`uv run ruff check .` 当前应为 0 错误**（全绿）。此前测试里有 3 个 E501 长行（`test_generation.py` 两处 `test_intruder`、`test_assets.py` 一处 `test_otheruser`），已由上游 `e2c84f5` 引入 `other_credentials` fixture 一并修掉。另：上游 `c200587` 生成的迁移 `20260826_1952_agent_runs.py` 未过格式化（I001 + 3 处 E501，上游至今未修），本地已用 `ruff format` 修复——纯格式重排，DDL 语义未动。若再出现 lint 报错，按回归对待、查明原因，不要顺手压行。
 - **改了数据库结构后要重启后端**：asyncpg 会缓存预编译语句计划，运行期间执行 `ALTER TABLE`（如 `timestamptz` 迁移）会让缓存计划失效，报 `InvalidCachedStatementError`。SQLAlchemy 的 asyncpg 方言会自动清缓存、下一次请求即恢复；但更稳妥的做法是「先停服务 → 跑迁移 → 再启动」。
 - **MinIO 的桶由 `storage.ensure_bucket` 在应用启动时自动创建**（`main.py` 的 `lifespan`，`/api/health` 也会调用它）。若手工删掉了桶，重启后端或请求一次健康检查即可恢复，不必手动 `mc mb`。MinIO 侧的约定见 `~/Desktop/minio/README.md`。
 - **签名 URL 里的 host 取自 `S3_ENDPOINT`，因此它决定了图片能否被打开**：当前本机配置是 `http://192.168.1.100:9000`（局域网 IP），所以本机与局域网设备都能打开签名 URL。**不要改回 `localhost`**——签名参数含 `X-Amz-SignedHeaders=host`，host 参与签名计算，把 URL 里的地址手工换成别的（或反向）都会得到 `SignatureDoesNotMatch`，必须由后端用正确的 host 重新签发。若在无局域网的纯单机环境使用，改回 `localhost` 也可以，但改完要重启后端与 worker。
 - **外部模型返回的图片链接 24 小时过期**，`services/generation.py` 会立即下载并转存到自有存储后才落库。新增对接外部模型时务必照此处理，不要把外部临时链接直接存进 `result`。
+- **对话规划的端点与图像生成不同**：planner 走 OpenAI 兼容模式 `{DASHSCOPE_BASE_URL}/compatible-mode/v1`（模型取 `PLANNER_MODEL`），而图像提供方走各自的适配器。未配置 `DASHSCOPE_API_KEY` 时发送指令会明确失败（不伪造成功）；当前 `.env` 的 `PLANNER_MODEL=grok-4.7` 走本机网关，是否可用取决于网关的模型白名单。
 - `docs/` 不入库，不要假设存在；需要背景信息时先询问用户。
 - 可选依赖 `cv`（rembg、onnxruntime、opencv-python-headless、rapidocr-onnxruntime）与 `agent`（langgraph、langchain）默认不装，本地需 `uv sync --all-extras`，Docker 构建已包含。rembg 模型权重挂在 `cv_models` 卷的 `/root/.u2net`。
 - 前端静态挂载依赖 `frontend/dist` 存在，未构建时后端也能正常启动，属预期行为。

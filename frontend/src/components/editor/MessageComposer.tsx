@@ -1,3 +1,4 @@
+// 指令输入框：Enter 发送、Shift+Enter 换行；发送中禁用并显示「思考中…」。
 import { useState } from 'react'
 
 export default function MessageComposer({
@@ -8,12 +9,13 @@ export default function MessageComposer({
   onSend: (text: string) => void
 }) {
   const [text, setText] = useState('')
+  // 纯空白不发；规划请求进行中不允许连发
   const canSend = text.trim().length > 0 && !pending
 
   const submit = () => {
     if (!canSend) return
     onSend(text.trim())
-    setText('')
+    setText('') // 发出即清空——指令已在对话区可见
   }
 
   return (
@@ -23,6 +25,7 @@ export default function MessageComposer({
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
+          // Enter 发送、Shift+Enter 换行；isComposing 排除中文输入法选词时的回车
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
             submit()

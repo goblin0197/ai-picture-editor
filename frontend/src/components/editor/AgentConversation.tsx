@@ -1,3 +1,4 @@
+// 对话区：展示会话内的全部问答轮次，每个计划步骤卡片订阅对应任务的实时进度。
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -8,6 +9,7 @@ import { useRun } from '@/hooks/useRun'
 
 export default function AgentConversation({ sessionId }: { sessionId: string }) {
   const { data: turns = [], isPending } = useTurns(sessionId)
+  // 指向列表末尾的哨兵元素：轮次变化时滚到底，保持最新消息可见
   const end = useRef<HTMLDivElement>(null)
 
   useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [turns.length])
@@ -34,13 +36,16 @@ export default function AgentConversation({ sessionId }: { sessionId: string }) 
   )
 }
 
+// 一轮问答：右侧用户指令气泡 → 左侧模型答复（失败显错误）→ 各步骤进度卡片
 function TurnBlock({ turn, sessionId }: { turn: Turn; sessionId: string }) {
   return (
     <div className="space-y-2">
+      {/* 用户指令：右缩进 + 品牌浅底，视觉上是「自己说的话」 */}
       <p className="bg-brand-soft text-brand-strong ml-6 rounded-[12px] px-3 py-2 text-xs leading-relaxed">
         {turn.goal}
       </p>
 
+      {/* 模型答复：规划失败时后端把原因放在 error，直接展示 */}
       {turn.error ? (
         <p className="text-danger mr-6 text-xs leading-relaxed">{turn.error}</p>
       ) : (
@@ -54,6 +59,7 @@ function TurnBlock({ turn, sessionId }: { turn: Turn; sessionId: string }) {
   )
 }
 
+// 步骤卡片：复用 useRun（SSE + 快照）展示该工具任务的实时进度
 function StepCard({ step, sessionId }: { step: PlanStep; sessionId: string }) {
   const queryClient = useQueryClient()
   const { status, progress, stage, error } = useRun(step.run_id)
@@ -76,6 +82,7 @@ function StepCard({ step, sessionId }: { step: PlanStep; sessionId: string }) {
         </span>
       </div>
 
+      {/* 进行中：细进度条 + 当前阶段文案 */}
       {running && (
         <>
           <div className="bg-line mt-2 h-0.5 overflow-hidden rounded-full">
